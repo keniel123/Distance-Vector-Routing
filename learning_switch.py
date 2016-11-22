@@ -1,62 +1,85 @@
-"""Your awesome Distance Vector router for CS 168."""
+"""
+Your learning switch warm-up exercise for CS-168.
+
+Start it up with a commandline like...
+
+  ./simulator.py --default-switch-type=learning_switch topos.rand --links=0
+
+"""
 
 import sim.api as api
 import sim.basics as basics
 
-# We define infinity as a distance of 16.
-INFINITY = 16
 
+class LearningSwitch(api.Entity):
+    """
+    A learning switch.
 
-class DVRouter(basics.DVRouterBase):
-    NO_LOG = True # Set to True on an instance to disable its logging
-    POISON_MODE = True # Can override POISON_MODE here
-    DEFAULT_TIMER_INTERVAL = 5 # Can override this yourself for testing
+    Looks at source addresses to learn where endpoints are.  When it doesn't
+    know where the destination endpoint is, floods.
+
+    This will surely have problems with topologies that have loops!  If only
+    someone would invent a helpful poem for solving that problem...
+
+    """
 
     def __init__(self):
         """
-        Called when the instance is initialized.
+        Do some initialization.
 
-        You probably want to do some additional initialization here.
-
-        """
-        self.start_timer()  # Starts calling handle_timer() at correct rate
-        super(DVRouter, self).__init__()
-        self.port_table = {} # port:latency to neighbour
-        self.distance_table = {} # dst:[port, total cost, time, valid_bit]
-        
-
-    def handle_link_up(self, port, latency):
-        """
-        Called by the framework when a link attached to this Entity goes up.
-
-        The port attached to the link and the link latency are passed
-        in.
+        You probablty want to do something in this method.
 
         """
-        self.port_table[port] = latency
-
-        #Send RoutePacket to every destination including itself
-        for dst in self.distance_table:
-            destination = dst
-            latency = self.distance_table.get(dst)[0]
-            packet = basics.RoutePacket(destination, latency)
-            self.send(packet, port)
-
+        super(LearningSwitch, self).__init__()
+        self.host_to_port = {}
+        self.forwarding_table = {}
 
     def handle_link_down(self, port):
         """
-        Called by the framework when a link attached to this Entity does down.
+        Called when a port goes down (because a link is removed)
 
-        The port number used by the link is passed in.
+        You probably want to remove table entries which are no longer
+        valid here.
 
         """
-        for dst in self.distance_table.keys():
-            if self.distance_table.get(dst)[1] == port:
-                self.distance_table.get(dst)[0] = INFINITY
-                packet = basics.RoutePacket(dst, INFINITY)
-                self.send(packet, port, flood = True)
+        for key in self.host_to_port:
+            if self.host_to_port[key] == port:
+                del forwarding_table[key]
+            del self.host_to_port[key]
 
-        del self.port_table[port]
+    def handle_rx(self, packet, in_port):
+        """
+        Called when a packet is received.
 
+        You most certainly want to process packets here, learning where
+        they're from, and either forwarding them toward the destination
+        or flooding them.
 
-        
+        """
+
+        # The source of the packet can obviously be reached via the input port, so
+        # we should "learn" that the source host is out that port.  If we later see
+        # a packet with that host as the *destination*, we know where to send it!
+        # But it's up to you to implement that.  For now, we just implement a
+        # simple hub.
+
+        if isinstance(packet, basics.HostDiscoveryPacket):
+            # Don't forward discovery messages
+            return
+        if packet.ttl <= 0:
+            return
+        packet.ttl -= 1
+        src = packet.src
+        dst = packet.dst
+
+        if src not in self.forwarding_table:
+            self.forwarding_table[src] = in_port
+            if in_port not in self.host_to_port:
+                self.host_to_port[in_port] = []
+            self.host_to_port[in_port].append(src)
+
+        if dst not in self.forwarding_table:
+            # Flood out all ports except the input port
+            self.send(packet, in_port, flood=True)
+        else:
+            self.send(packet, self.forwarding_table[dst])
