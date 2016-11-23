@@ -31,7 +31,6 @@ class LearningSwitch(api.Entity):
 
         """
         super(LearningSwitch, self).__init__()
-        self.host_to_port = {}
         self.forwarding_table = {}
 
     def handle_link_down(self, port):
@@ -42,10 +41,10 @@ class LearningSwitch(api.Entity):
         valid here.
 
         """
-        for key in self.host_to_port:
-            if self.host_to_port[key] == port:
-                del forwarding_table[key]
-            del self.host_to_port[key]
+        
+        for key in self.forwarding_table.keys():
+            if self.forwarding_table[key] == port:
+                del self.forwarding_table[key]
 
     def handle_rx(self, packet, in_port):
         """
@@ -65,21 +64,13 @@ class LearningSwitch(api.Entity):
 
         if isinstance(packet, basics.HostDiscoveryPacket):
             # Don't forward discovery messages
+            self.forwarding_table[packet.src] = in_port
             return
-        if packet.ttl <= 0:
-            return
-        packet.ttl -= 1
-        src = packet.src
-        dst = packet.dst
+        if packet.src not in self.forwarding_table:
+            self.forwarding_table[packet.src] = in_port
 
-        if src not in self.forwarding_table:
-            self.forwarding_table[src] = in_port
-            if in_port not in self.host_to_port:
-                self.host_to_port[in_port] = []
-            self.host_to_port[in_port].append(src)
-
-        if dst not in self.forwarding_table:
-            # Flood out all ports except the input port
-            self.send(packet, in_port, flood=True)
+        if packet.dst not in self.forwarding_table:
+          # Flood out all ports except the input port
+          self.send(packet, in_port, flood=True)
         else:
-            self.send(packet, self.forwarding_table[dst])
+          self.send(packet, self.forwarding_table[packet.dst])
